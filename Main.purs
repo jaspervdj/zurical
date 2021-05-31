@@ -5,9 +5,11 @@ import Prelude
 import Data.Array as Array
 import Data.Foldable (for_, traverse_)
 import Data.HashMap as HM
+import Data.Int as Int
 import Data.JSDate as Date
 import Data.Maybe (Maybe(..), maybe)
 import Data.Traversable (traverse)
+import Data.Tuple (Tuple(..), snd, uncurry)
 import Effect (Effect)
 import Effect.Exception (throw)
 import Web.DOM.ChildNode as Dom.ChildNode
@@ -76,23 +78,33 @@ scheduleInsert entry schedule
             if l < r then Parallel x' y else Parallel x y'
 
 scheduleRender
-    :: Dom.Document.Document -> Schedule String -> Effect Dom.Element.Element
-scheduleRender doc = \schedule -> do
+    :: Dom.Document.Document -> String -> Schedule String
+    -> Effect Dom.Element.Element
+scheduleRender doc day = \schedule -> do
     container <- Dom.Document.createElement "div" doc
     let start = ticks $ scheduleStart schedule
         end = ticks $ scheduleEnd schedule
-        height = end - start
+        height = end - start + Int.toNumber margin
+    Dom.Element.setAttribute "class" "day" container
     Dom.Element.setAttribute "style"
         ("position: relative; height: " <> show height <> "px; width: 100%;")
         container
+
+    div <- Dom.Document.createElement "div" doc
+    Dom.Element.setAttribute "class" "date" div
+    Dom.Node.setTextContent day (Dom.Element.toNode div)
+    Dom.Node.appendChild (Dom.Element.toNode div) (Dom.Element.toNode container)
+
     go container (scheduleStart schedule) 0 100 schedule
     pure container
   where
+    margin = 20
     go container zero left width schedule = case schedule of
         Single {start, end, content} -> do
-            let y = ticks start - ticks zero
+            let y = ticks start - ticks zero + Int.toNumber margin
                 height = ticks end - ticks start
             div <- Dom.Document.createElement "div" doc
+            Dom.Element.setAttribute "class" "entry" div
             Dom.Element.setAttribute "style"
                 ("position: absolute;" <>
                     "top: " <> show y <> "px;" <>
@@ -137,8 +149,8 @@ calendarFromEntries = Array.foldl (flip calendarInsert) HM.empty
 calendarRender
     :: Dom.Document.Document -> Calendar String
     -> Effect (Array Dom.Element.Element)
-calendarRender doc calendar = traverse (scheduleRender doc) $
-    Array.sortWith scheduleStart $ Array.fromFoldable calendar
+calendarRender doc calendar = traverse (uncurry $ scheduleRender doc) $
+    Array.sortWith (snd >>> scheduleStart) $ HM.toArrayBy Tuple calendar
 
 parseEntry
     :: Dom.Element.Element -> Effect (Maybe (Entry String))
