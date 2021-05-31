@@ -9,6 +9,7 @@
   , "maybe"
   , "prelude"
   , "psci-support"
+  , "strings"
   , "unordered-collections"
   , "web-dom"
   , "web-html"

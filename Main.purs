@@ -8,6 +8,7 @@ import Data.HashMap as HM
 import Data.Int as Int
 import Data.JSDate as Date
 import Data.Maybe (Maybe(..), maybe)
+import Data.String as String
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..), snd, uncurry)
 import Effect (Effect)
@@ -105,9 +106,14 @@ scheduleRender doc day schedule0 = do
         Single {start, end, content: {kind, link, title}} -> do
             let y = ticks start - ticks zero + Int.toNumber margin
                 height = ticks end - ticks start
-            div <- Dom.Document.createElement "a" doc
+            div <- case String.trim link of
+                "" -> Dom.Document.createElement "div" doc
+                link' -> do
+                    a <- Dom.Document.createElement "a" doc
+                    Dom.Element.setAttribute "href" link' a
+                    pure a
+
             Dom.Element.setAttribute "class" ("entry " <> kind) div
-            Dom.Element.setAttribute "href" link div
             Dom.Element.setAttribute "style"
                 ("position: absolute;" <>
                     "top: " <> show y <> "px;" <>
