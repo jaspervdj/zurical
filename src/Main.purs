@@ -2,48 +2,40 @@ module Main where
 
 import Prelude
 
+import Data.Array as Array
+import Data.Foldable (for_, traverse_)
+import Data.HashMap as HM
+import Data.JSDate as Date
+import Data.Maybe (Maybe(..), maybe)
+import Data.Traversable (traverse)
+import Effect.Console (log)
 import Effect (Effect)
 import Effect.Exception (throw)
-import Data.Int as Int
-import Data.Array as Array
-import Data.Traversable (traverse)
-import Data.Foldable (for_, traverse_)
-import Effect.Console (log)
-import Data.Maybe (Maybe(..), maybe)
-import Web.DOM.ParentNode (QuerySelector (..), querySelector, querySelectorAll)
-import Web.DOM.NodeList as Dom.NodeList
-import Data.JSDate as Date
-import Web.HTML.Window as Html.Window
-import Data.HashMap as HM
+import Web.DOM.ChildNode as Dom.ChildNode
+import Web.DOM.Document as Dom.Document
 import Web.DOM.Element as Dom.Element
 import Web.DOM.HTMLCollection as Dom.HTMLCollection
+import Web.DOM.Node as Dom.Node
+import Web.DOM.NodeList as Dom.NodeList
 import Web.DOM.ParentNode as Dom.ParentNode
-import Web.DOM.ChildNode as Dom.ChildNode
-import Web.HTML.HTMLElement as Html.Element
+import Web.DOM.ParentNode (QuerySelector (..), querySelector, querySelectorAll)
 import Web.HTML as Html
 import Web.HTML.HTMLDocument as Html.Doc
-import Web.DOM.Document as Dom.Document
-import Web.DOM.Node as Dom.Node
-import Data.Generic.Rep (class Generic)
-import Data.Show.Generic (genericShow)
+import Web.HTML.HTMLElement as Html.Element
+import Web.HTML.Window as Html.Window
 
 foreign import innerText :: Html.Element.HTMLElement -> Effect String
 
 type Entry a =
     { start   :: Date.JSDate
     , end     :: Date.JSDate
-    , content :: String
+    , content :: a
     }
 
 data Schedule a
     = Single (Entry a)
     | After (Schedule a) (Schedule a)
     | Parallel (Schedule a) (Schedule a)
-
-derive instance genericSchedule :: Generic (Schedule a) _
-
-instance showSchedule :: Show a => Show (Schedule a) where
-    show x = genericShow x
 
 scheduleStart :: forall a. Schedule a -> Date.JSDate
 scheduleStart (Single entry) = entry.start
@@ -184,14 +176,13 @@ main = do
 
     entries <- parseEntries schedule
     let calendar = calendarFromEntries entries :: Calendar String
-    log $ show (calendarFromEntries entries :: Calendar String)
 
     -- Remove original content.
     Dom.ParentNode.children (Dom.Element.toParentNode schedule) >>=
         Dom.HTMLCollection.toArray >>=
         traverse_ (Dom.Element.toChildNode >>> Dom.ChildNode.remove)
 
+    -- Add rendered content.
     rendered <- calendarRender (Html.Doc.toDocument doc) calendar
     for_ rendered $ \c -> Dom.Node.appendChild
         (Dom.Element.toNode c) (Dom.Element.toNode schedule)
-    log "🍝"

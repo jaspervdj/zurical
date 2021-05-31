@@ -5,7 +5,6 @@
   , "effect"
   , "exceptions"
   , "foldable-traversable"
-  , "integers"
   , "js-date"
   , "maybe"
   , "prelude"
