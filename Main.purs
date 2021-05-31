@@ -78,16 +78,16 @@ scheduleInsert entry schedule
             if l < r then Parallel x' y else Parallel x y'
 
 scheduleRender
-    :: Dom.Document.Document -> String -> Schedule String
+    :: Dom.Document.Document -> String -> Schedule Info
     -> Effect Dom.Element.Element
-scheduleRender doc day = \schedule -> do
+scheduleRender doc day schedule0 = do
     container <- Dom.Document.createElement "div" doc
-    let start = ticks $ scheduleStart schedule
-        end = ticks $ scheduleEnd schedule
+    let start = ticks $ scheduleStart schedule0
+        end = ticks $ scheduleEnd schedule0
         height = end - start + Int.toNumber margin
     Dom.Element.setAttribute "class" "day" container
     Dom.Element.setAttribute "style"
-        ("position: relative; height: " <> show height <> "px; width: 100%;")
+        ("position: relative; height: " <> show height <> "px;")
         container
 
     div <- Dom.Document.createElement "div" doc
@@ -95,16 +95,19 @@ scheduleRender doc day = \schedule -> do
     Dom.Node.setTextContent day (Dom.Element.toNode div)
     Dom.Node.appendChild (Dom.Element.toNode div) (Dom.Element.toNode container)
 
-    go container (scheduleStart schedule) 0 100 schedule
+    go container 0.0 100.0 schedule0
     pure container
   where
-    margin = 20
-    go container zero left width schedule = case schedule of
-        Single {start, end, content} -> do
+    margin = 30
+    zero   = scheduleStart schedule0
+
+    go container left width schedule = case schedule of
+        Single {start, end, content: {kind, link, title}} -> do
             let y = ticks start - ticks zero + Int.toNumber margin
                 height = ticks end - ticks start
-            div <- Dom.Document.createElement "div" doc
-            Dom.Element.setAttribute "class" "entry" div
+            div <- Dom.Document.createElement "a" doc
+            Dom.Element.setAttribute "class" ("entry " <> kind) div
+            Dom.Element.setAttribute "href" link div
             Dom.Element.setAttribute "style"
                 ("position: absolute;" <>
                     "top: " <> show y <> "px;" <>
@@ -112,22 +115,24 @@ scheduleRender doc day = \schedule -> do
                     "width: " <> show width <> "%; " <>
                     "height: " <> show height <> "px;")
                 div
+
             startStr <- renderDateTime start
             endStr <- renderDateTime end
             Dom.Node.setTextContent
-                (startStr <> " - " <> endStr <> ": " <> content)
+                (startStr <> " - " <> endStr <> ": " <> title)
                 (Dom.Element.toNode div)
+
             Dom.Node.appendChild
                 (Dom.Element.toNode div) (Dom.Element.toNode container)
         After x y -> do
-            go container zero left width x
-            go container zero left width y
+            go container left width x
+            go container left width y
         Parallel x y -> do
-            let xp = scheduleParallelism x
-                yp = scheduleParallelism y
+            let xp = Int.toNumber $ scheduleParallelism x
+                yp = Int.toNumber $ scheduleParallelism y
                 unitWidth = width / (xp + yp)
-            go container zero left (xp * unitWidth) x
-            go container zero (left + xp * unitWidth) (yp * unitWidth) y
+            go container left (xp * unitWidth) x
+            go container (left + xp * unitWidth) (yp * unitWidth) y
 
     ticks date = 1.5 * Date.getTime date / 1000.0 / 60.0
 
@@ -147,29 +152,34 @@ calendarFromEntries :: forall a. Array (Entry a) -> Calendar a
 calendarFromEntries = Array.foldl (flip calendarInsert) HM.empty
 
 calendarRender
-    :: Dom.Document.Document -> Calendar String
+    :: Dom.Document.Document -> Calendar Info
     -> Effect (Array Dom.Element.Element)
 calendarRender doc calendar = traverse (uncurry $ scheduleRender doc) $
     Array.sortWith (snd >>> scheduleStart) $ HM.toArrayBy Tuple calendar
 
+type Info =
+    { kind  :: String
+    , link  :: String
+    , title :: String
+    }
+
 parseEntry
-    :: Dom.Element.Element -> Effect (Maybe (Entry String))
+    :: Dom.Element.Element -> Effect (Maybe (Entry Info))
 parseEntry element = do
-    tds <- querySelectorAll
+    cells <- querySelectorAll
             (QuerySelector "td") (Dom.Element.toParentNode element) >>=
-        Dom.NodeList.toArray
-    case map Html.Element.fromNode tds of
-        [Just startElement, Just endElement, Just contentElement] -> do
-            startText <- innerText startElement
+        Dom.NodeList.toArray >>=
+        (Array.mapMaybe Html.Element.fromNode >>> pure) >>=
+        traverse innerText
+    case cells of
+        [startText, endText, kind, link, title] -> do
             start <- Date.parse startText
-            endText <- innerText endElement
             end <- Date.parse endText
-            content <- innerText contentElement
-            pure $ Just {start, end, content}
+            pure $ Just {start, end, content: {kind, link, title}}
         _ -> pure Nothing
 
 parseEntries
-    :: Dom.Element.Element -> Effect (Array (Entry String))
+    :: Dom.Element.Element -> Effect (Array (Entry Info))
 parseEntries schedule = do
     trs <- querySelectorAll (QuerySelector "tr")
             (Dom.Element.toParentNode schedule) >>=
@@ -179,14 +189,15 @@ parseEntries schedule = do
 
 main :: Effect Unit
 main = do
+    -- Find schedule table.
     window <- Html.window
     doc <- Html.Window.document window
     schedule <- querySelector
         (QuerySelector ".schedule") (Html.Doc.toParentNode doc) >>=
         maybe (throw "no schedule") pure
 
-    entries <- parseEntries schedule
-    let calendar = calendarFromEntries entries :: Calendar String
+    -- Parse calendar from schedule table.
+    calendar <- calendarFromEntries <$> parseEntries schedule
 
     -- Remove original content.
     Dom.ParentNode.children (Dom.Element.toParentNode schedule) >>=
