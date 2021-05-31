@@ -4,8 +4,10 @@ import Prelude
 
 import Effect (Effect)
 import Effect.Exception (throw)
+import Data.Int as Int
 import Data.Array as Array
 import Data.Traversable (traverse)
+import Data.Foldable (for_)
 import Effect.Console (log)
 import Data.Maybe (Maybe(..), maybe)
 import Web.DOM.ParentNode (QuerySelector (..), querySelector, querySelectorAll)
@@ -17,8 +19,12 @@ import Web.DOM.Element as Dom.Element
 import Web.HTML.HTMLElement as Html.Element
 import Web.HTML as Html
 import Web.HTML.HTMLDocument as Html.Doc
+import Web.DOM.Document as Dom.Document
+import Web.DOM.Node as Dom.Node
 import Data.Generic.Rep (class Generic)
 import Data.Show.Generic (genericShow)
+
+foreign import innerText :: Html.Element.HTMLElement -> Effect String
 
 type Entry a =
     { start   :: Date.JSDate
@@ -74,6 +80,52 @@ scheduleInsert entry schedule
                 r  = scheduleParallelism x + scheduleParallelism y' in
             if l < r then Parallel x' y else Parallel x y'
 
+scheduleRender
+    :: Dom.Document.Document -> Schedule String -> Effect Dom.Element.Element
+scheduleRender doc = \schedule -> do
+    container <- Dom.Document.createElement "div" doc
+    let start = ticks $ scheduleStart schedule
+        end = ticks $ scheduleEnd schedule
+        height = end - start
+    Dom.Element.setAttribute "style"
+        ("position: relative; height: " <> show height <> "px; width: 100%;")
+        container
+    log $ "start: " <> show (scheduleStart schedule)
+    log $ "start: " <> show start
+    log $ "end: " <> show (scheduleEnd schedule)
+    log $ "end: " <> show end
+    log $ "height: " <> show height
+    go container (scheduleStart schedule) 0 100 schedule
+    pure container
+  where
+    go container zero left right schedule = case schedule of
+        Single {start, end, content} -> do
+            let y = ticks start - ticks zero
+                height = ticks end - ticks start
+            div <- Dom.Document.createElement "div" doc
+            Dom.Element.setAttribute "style"
+                ("position: absolute;" <>
+                    "left: " <> show left <> "%; " <>
+                    "right: " <> show right <> "%; " <>
+                    "height: " <> show height <> "px;" <>
+                    "top: " <> show y <> "px;")
+                div
+            Dom.Node.setTextContent content (Dom.Element.toNode div)
+            Dom.Node.appendChild
+                (Dom.Element.toNode div) (Dom.Element.toNode container)
+        After x y -> do
+            go container zero left right x
+            go container zero left right y
+        Parallel x y -> do
+            let xp = scheduleParallelism x
+                yp = scheduleParallelism y
+                unitWidth = (right - left) / (xp + yp)
+            go container zero left (left + xp * unitWidth) x
+            go container zero (left + xp * unitWidth) right y
+
+    ticks date = Date.getTime date / 1000.0 / 60.0
+
+
 type Day = String
 
 type Calendar a = HM.HashMap Day (Schedule a)
@@ -88,7 +140,17 @@ calendarInsert entry calendar = case HM.lookup day calendar of
 calendarFromEntries :: forall a. Array (Entry a) -> Calendar a
 calendarFromEntries = Array.foldl (flip calendarInsert) HM.empty
 
-foreign import innerText :: Html.Element.HTMLElement -> Effect String
+calendarRender
+    :: Dom.Document.Document -> Calendar String -> Effect Dom.Element.Element
+calendarRender doc calendar = do
+    container <- Dom.Document.createElement "div" doc
+    for_ ordered $ \schedule -> do
+        el <- scheduleRender doc schedule
+        Dom.Node.appendChild
+            (Dom.Element.toNode el) (Dom.Element.toNode container)
+    pure container
+  where
+    ordered = Array.sortWith scheduleStart $ Array.fromFoldable calendar
 
 parseEntry
     :: Dom.Element.Element -> Effect (Maybe (Entry String))
@@ -124,5 +186,9 @@ main = do
         maybe (throw "no schedule") pure
 
     entries <- parseEntries schedule
+    let calendar = calendarFromEntries entries :: Calendar String
     log $ show (calendarFromEntries entries :: Calendar String)
+    rendered <- calendarRender (Html.Doc.toDocument doc) calendar
+    Dom.Node.appendChild
+        (Dom.Element.toNode rendered) (Dom.Element.toNode schedule)
     log "🍝"
