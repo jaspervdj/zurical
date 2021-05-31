@@ -8,7 +8,6 @@ import Data.HashMap as HM
 import Data.JSDate as Date
 import Data.Maybe (Maybe(..), maybe)
 import Data.Traversable (traverse)
-import Effect.Console (log)
 import Effect (Effect)
 import Effect.Exception (throw)
 import Web.DOM.ChildNode as Dom.ChildNode
@@ -25,6 +24,7 @@ import Web.HTML.HTMLElement as Html.Element
 import Web.HTML.Window as Html.Window
 
 foreign import innerText :: Html.Element.HTMLElement -> Effect String
+foreign import renderDateTime :: Date.JSDate -> Effect String
 
 type Entry a =
     { start   :: Date.JSDate
@@ -85,11 +85,6 @@ scheduleRender doc = \schedule -> do
     Dom.Element.setAttribute "style"
         ("position: relative; height: " <> show height <> "px; width: 100%;")
         container
-    log $ "start: " <> show (scheduleStart schedule)
-    log $ "start: " <> show start
-    log $ "end: " <> show (scheduleEnd schedule)
-    log $ "end: " <> show end
-    log $ "height: " <> show height
     go container (scheduleStart schedule) 0 100 schedule
     pure container
   where
@@ -105,7 +100,11 @@ scheduleRender doc = \schedule -> do
                     "width: " <> show width <> "%; " <>
                     "height: " <> show height <> "px;")
                 div
-            Dom.Node.setTextContent content (Dom.Element.toNode div)
+            startStr <- renderDateTime start
+            endStr <- renderDateTime end
+            Dom.Node.setTextContent
+                (startStr <> " - " <> endStr <> ": " <> content)
+                (Dom.Element.toNode div)
             Dom.Node.appendChild
                 (Dom.Element.toNode div) (Dom.Element.toNode container)
         After x y -> do

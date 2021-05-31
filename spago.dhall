@@ -1,7 +1,6 @@
 { name = "zurihcal"
 , dependencies =
   [ "arrays"
-  , "console"
   , "effect"
   , "exceptions"
   , "foldable-traversable"
