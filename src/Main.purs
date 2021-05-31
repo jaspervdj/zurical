@@ -7,7 +7,7 @@ import Effect.Exception (throw)
 import Data.Int as Int
 import Data.Array as Array
 import Data.Traversable (traverse)
-import Data.Foldable (for_)
+import Data.Foldable (for_, traverse_)
 import Effect.Console (log)
 import Data.Maybe (Maybe(..), maybe)
 import Web.DOM.ParentNode (QuerySelector (..), querySelector, querySelectorAll)
@@ -16,6 +16,9 @@ import Data.JSDate as Date
 import Web.HTML.Window as Html.Window
 import Data.HashMap as HM
 import Web.DOM.Element as Dom.Element
+import Web.DOM.HTMLCollection as Dom.HTMLCollection
+import Web.DOM.ParentNode as Dom.ParentNode
+import Web.DOM.ChildNode as Dom.ChildNode
 import Web.HTML.HTMLElement as Html.Element
 import Web.HTML as Html
 import Web.HTML.HTMLDocument as Html.Doc
@@ -98,32 +101,32 @@ scheduleRender doc = \schedule -> do
     go container (scheduleStart schedule) 0 100 schedule
     pure container
   where
-    go container zero left right schedule = case schedule of
+    go container zero left width schedule = case schedule of
         Single {start, end, content} -> do
             let y = ticks start - ticks zero
                 height = ticks end - ticks start
             div <- Dom.Document.createElement "div" doc
             Dom.Element.setAttribute "style"
                 ("position: absolute;" <>
+                    "top: " <> show y <> "px;" <>
                     "left: " <> show left <> "%; " <>
-                    "right: " <> show right <> "%; " <>
-                    "height: " <> show height <> "px;" <>
-                    "top: " <> show y <> "px;")
+                    "width: " <> show width <> "%; " <>
+                    "height: " <> show height <> "px;")
                 div
             Dom.Node.setTextContent content (Dom.Element.toNode div)
             Dom.Node.appendChild
                 (Dom.Element.toNode div) (Dom.Element.toNode container)
         After x y -> do
-            go container zero left right x
-            go container zero left right y
+            go container zero left width x
+            go container zero left width y
         Parallel x y -> do
             let xp = scheduleParallelism x
                 yp = scheduleParallelism y
-                unitWidth = (right - left) / (xp + yp)
-            go container zero left (left + xp * unitWidth) x
-            go container zero (left + xp * unitWidth) right y
+                unitWidth = width / (xp + yp)
+            go container zero left (xp * unitWidth) x
+            go container zero (left + xp * unitWidth) (yp * unitWidth) y
 
-    ticks date = Date.getTime date / 1000.0 / 60.0
+    ticks date = 1.5 * Date.getTime date / 1000.0 / 60.0
 
 
 type Day = String
@@ -141,16 +144,10 @@ calendarFromEntries :: forall a. Array (Entry a) -> Calendar a
 calendarFromEntries = Array.foldl (flip calendarInsert) HM.empty
 
 calendarRender
-    :: Dom.Document.Document -> Calendar String -> Effect Dom.Element.Element
-calendarRender doc calendar = do
-    container <- Dom.Document.createElement "div" doc
-    for_ ordered $ \schedule -> do
-        el <- scheduleRender doc schedule
-        Dom.Node.appendChild
-            (Dom.Element.toNode el) (Dom.Element.toNode container)
-    pure container
-  where
-    ordered = Array.sortWith scheduleStart $ Array.fromFoldable calendar
+    :: Dom.Document.Document -> Calendar String
+    -> Effect (Array Dom.Element.Element)
+calendarRender doc calendar = traverse (scheduleRender doc) $
+    Array.sortWith scheduleStart $ Array.fromFoldable calendar
 
 parseEntry
     :: Dom.Element.Element -> Effect (Maybe (Entry String))
@@ -188,7 +185,13 @@ main = do
     entries <- parseEntries schedule
     let calendar = calendarFromEntries entries :: Calendar String
     log $ show (calendarFromEntries entries :: Calendar String)
+
+    -- Remove original content.
+    Dom.ParentNode.children (Dom.Element.toParentNode schedule) >>=
+        Dom.HTMLCollection.toArray >>=
+        traverse_ (Dom.Element.toChildNode >>> Dom.ChildNode.remove)
+
     rendered <- calendarRender (Html.Doc.toDocument doc) calendar
-    Dom.Node.appendChild
-        (Dom.Element.toNode rendered) (Dom.Element.toNode schedule)
+    for_ rendered $ \c -> Dom.Node.appendChild
+        (Dom.Element.toNode c) (Dom.Element.toNode schedule)
     log "🍝"
