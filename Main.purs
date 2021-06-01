@@ -140,7 +140,7 @@ scheduleRender doc day schedule0 = do
             go container left (xp * unitWidth) x
             go container (left + xp * unitWidth) (yp * unitWidth) y
 
-    ticks date = 1.5 * Date.getTime date / 1000.0 / 60.0
+    ticks date = Date.getTime date / 1000.0 / 60.0
 
 
 type Day = String
