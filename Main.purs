@@ -122,11 +122,20 @@ scheduleRender doc day schedule0 = do
                     "height: " <> show height <> "px;")
                 div
 
+            timeSpan <- Dom.Document.createElement "span" doc
+            Dom.Element.setAttribute "class" "time" timeSpan
             startStr <- renderDateTime start
             endStr <- renderDateTime end
-            Dom.Node.setTextContent
-                (startStr <> " - " <> endStr <> ": " <> title)
-                (Dom.Element.toNode div)
+            Dom.Node.setTextContent (startStr <> " - " <> endStr <> ":")
+                (Dom.Element.toNode timeSpan)
+            Dom.Node.appendChild
+                (Dom.Element.toNode timeSpan) (Dom.Element.toNode div)
+
+            titleSpan <- Dom.Document.createElement "span" doc
+            Dom.Element.setAttribute "class" "title" titleSpan
+            Dom.Node.setTextContent title (Dom.Element.toNode titleSpan)
+            Dom.Node.appendChild
+                (Dom.Element.toNode titleSpan) (Dom.Element.toNode div)
 
             Dom.Node.appendChild
                 (Dom.Element.toNode div) (Dom.Element.toNode container)
