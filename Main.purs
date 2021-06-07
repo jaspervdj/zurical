@@ -4,10 +4,12 @@ import Prelude
 
 import Data.Array as Array
 import Data.Foldable (for_, traverse_)
+import Data.Generic.Rep (class Generic)
 import Data.HashMap as HM
 import Data.Int as Int
 import Data.JSDate as Date
 import Data.Maybe (Maybe(..), maybe)
+import Data.Show.Generic (genericShow)
 import Data.String as String
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..), snd, uncurry)
@@ -40,6 +42,11 @@ data Schedule a
     | After (Schedule a) (Schedule a)
     | Parallel (Schedule a) (Schedule a)
 
+derive instance genericSchedule :: Generic (Schedule a) _
+
+instance showSchedule :: Show a => Show (Schedule a) where
+    show x = genericShow x
+
 scheduleStart :: forall a. Schedule a -> Date.JSDate
 scheduleStart (Single entry) = entry.start
 scheduleStart (After x _) = scheduleStart x
@@ -65,12 +72,15 @@ scheduleInsert entry schedule
         After (Single entry) schedule
     | otherwise = case schedule of
         Single other -> Parallel (Single other) (Single entry)
+        After (After x y) z
+            | entry.start >= scheduleEnd x ->
+                After x (scheduleInsert entry (After y z))
         After x y
-           | entry.start >= scheduleEnd x ->
-               After x (scheduleInsert entry y)
-           | entry.end <= scheduleEnd y ->
-               After (scheduleInsert entry x) y
-           | otherwise -> Parallel (After x y) (Single entry)
+            | entry.start >= scheduleEnd x ->
+                After x (scheduleInsert entry y)
+            | entry.end <= scheduleStart y ->
+                After (scheduleInsert entry x) y
+            | otherwise -> Parallel (After x y) (Single entry)
         Parallel x y ->
             let x' = scheduleInsert entry x
                 l  = scheduleParallelism x' + scheduleParallelism y
