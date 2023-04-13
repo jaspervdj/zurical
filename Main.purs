@@ -100,24 +100,27 @@ scheduleRender
     -> Effect Dom.Element.Element
 scheduleRender doc date schedule0 = do
     container <- Dom.Document.createElement "div" doc
-    let start = ticks $ scheduleStart schedule0
-        end = ticks $ scheduleEnd schedule0
-        height = Int.toNumber $ end - start + margin
     Dom.Element.setAttribute "class" "day" container
-    Dom.Element.setAttribute "style"
-        ("position: relative; height: " <> show height <> "px;")
-        container
 
     div <- Dom.Document.createElement "div" doc
     Dom.Element.setAttribute "class" "date" div
     Dom.Node.setTextContent (renderDate date) (Dom.Element.toNode div)
     Dom.Node.appendChild (Dom.Element.toNode div) (Dom.Element.toNode container)
 
-    go container 0.0 100.0 schedule0
+    entries <- Dom.Document.createElement "div" doc
+    let start = ticks $ scheduleStart schedule0
+        end = ticks $ scheduleEnd schedule0
+        height = Int.toNumber $ end - start
+    Dom.Element.setAttribute "class" "entries" entries
+    Dom.Element.setAttribute "style"
+        ("position: relative; height: " <> show height <> "px;")
+        entries
+    go entries 0.0 100.0 schedule0
+    Dom.Node.appendChild (Dom.Element.toNode entries) (Dom.Element.toNode container)
+
     pure container
   where
-    margin = 30
-    zero   = scheduleStart schedule0
+    zero = scheduleStart schedule0
 
     timeFmt =
         [ Formatter.DateTime.Hours24
@@ -140,7 +143,7 @@ scheduleRender doc date schedule0 = do
 
     go container left width schedule = case schedule of
         Single {start, end, content: {kind, link, title}} -> do
-            let y = Int.toNumber $ ticks start - ticks zero + margin
+            let y = Int.toNumber $ ticks start - ticks zero
                 height = Int.toNumber $ ticks end - ticks start
             div <- case String.trim link of
                 "" -> Dom.Document.createElement "div" doc
