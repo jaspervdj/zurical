@@ -1,17 +1,25 @@
 # This is the ZuriHac calendar
 
+![](example.png)
+
+## Goals
+
+* Smart about timezones, could work for remote events as well as in-person.
+* Optional: source of truth is readable and correct with NoScript.
+
 ## Building
 
     nix-shell --command 'spago bundle-app'
 
-## Configuring
-
-A table in the `.schedule` class gets turned into a nicer looking schedule.
-Look at [index.html](#file-index-html) for the expected markup.
-
 ## Deploying
 
 Copy `index.js` wherever.
+
+## Example
+
+A table in the `.schedule` class gets turned into a nicer looking schedule.
+Look at <index.html> for the expected markup.
+
 
 ## Demo
 
