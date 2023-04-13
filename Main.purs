@@ -7,7 +7,7 @@ import Data.DateTime as DateTime
 import Data.DateTime.Parsing as DateTime.Parsing
 import Data.Either (either)
 import Data.Enum (fromEnum)
-import Data.Foldable (for_, traverse_)
+import Data.Foldable (for_, minimum, traverse_)
 import Data.Formatter.DateTime as Formatter.DateTime
 import Data.Generic.Rep (class Generic)
 import Data.Int as Int
@@ -17,7 +17,7 @@ import Data.Maybe (Maybe(..), maybe)
 import Data.Show.Generic (genericShow)
 import Data.String as String
 import Data.Time as Time
-import Data.Traversable (traverse)
+import Data.Traversable (sequence, traverse)
 import Data.Tuple (Tuple(..), fst, uncurry)
 import Effect (Effect)
 import Effect.Exception (throw)
@@ -96,9 +96,10 @@ scheduleInsert entry schedule
 scheduleRender
     :: Dom.Document.Document
     -> DateTime.Date
+    -> Maybe DateTime.Time
     -> Schedule DateTime.Time Info
     -> Effect Dom.Element.Element
-scheduleRender doc date schedule0 = do
+scheduleRender doc date mbEarliest schedule0 = do
     container <- Dom.Document.createElement "div" doc
     Dom.Element.setAttribute "class" "day" container
 
@@ -107,10 +108,18 @@ scheduleRender doc date schedule0 = do
     Dom.Node.setTextContent (renderDate date) (Dom.Element.toNode div)
     Dom.Node.appendChild (Dom.Element.toNode div) (Dom.Element.toNode container)
 
-    entries <- Dom.Document.createElement "div" doc
     let start = ticks $ scheduleStart schedule0
-        end = ticks $ scheduleEnd schedule0
-        height = Int.toNumber $ end - start
+    for_ mbEarliest $ \earliest -> do
+        let padding = start - ticks earliest
+        morning <- Dom.Document.createElement "div" doc
+        Dom.Element.setAttribute "class" "morning" morning
+        Dom.Element.setAttribute "style"
+            ("height: " <> show padding <> "px;") morning
+        Dom.Node.appendChild (Dom.Element.toNode morning) (Dom.Element.toNode container)
+
+    entries <- Dom.Document.createElement "div" doc
+    let end = ticks $ scheduleEnd schedule0
+        height = end - start
     Dom.Element.setAttribute "class" "entries" entries
     Dom.Element.setAttribute "style"
         ("position: relative; height: " <> show height <> "px;")
@@ -143,8 +152,8 @@ scheduleRender doc date schedule0 = do
 
     go container left width schedule = case schedule of
         Single {start, end, content: {kind, link, title}} -> do
-            let y = Int.toNumber $ ticks start - ticks zero
-                height = Int.toNumber $ ticks end - ticks start
+            let y = ticks start - ticks zero
+                height = ticks end - ticks start
             div <- case String.trim link of
                 "" -> Dom.Document.createElement "div" doc
                 link' -> do
@@ -210,8 +219,11 @@ calendarFromEntries = Array.foldl (flip calendarInsert) Map.empty
 calendarRender
     :: Dom.Document.Document -> Calendar Info
     -> Effect (Array Dom.Element.Element)
-calendarRender doc calendar = traverse (uncurry $ scheduleRender doc) $
-    Array.sortWith fst $ Map.toUnfoldable calendar
+calendarRender doc calendar = sequence $ do
+    Tuple date schedule <- Array.sortWith fst $ Map.toUnfoldable calendar
+    pure $ scheduleRender doc date earliest schedule
+  where
+    earliest = minimum $ map scheduleStart calendar
 
 type Info =
     { kind  :: String
