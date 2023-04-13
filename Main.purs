@@ -3,16 +3,22 @@ module Main where
 import Prelude
 
 import Data.Array as Array
+import Data.DateTime as DateTime
+import Data.DateTime.Parsing as DateTime.Parsing
+import Data.Either (either)
+import Data.Enum (fromEnum)
 import Data.Foldable (for_, traverse_)
+import Data.Formatter.DateTime as Formatter.DateTime
 import Data.Generic.Rep (class Generic)
-import Data.HashMap as HM
 import Data.Int as Int
-import Data.JSDate as Date
+import Data.List as List
+import Data.Map as Map
 import Data.Maybe (Maybe(..), maybe)
 import Data.Show.Generic (genericShow)
 import Data.String as String
+import Data.Time as Time
 import Data.Traversable (traverse)
-import Data.Tuple (Tuple(..), snd, uncurry)
+import Data.Tuple (Tuple(..), fst, uncurry)
 import Effect (Effect)
 import Effect.Exception (throw)
 import Web.DOM.ChildNode as Dom.ChildNode
@@ -29,7 +35,6 @@ import Web.HTML.HTMLElement as Html.Element
 import Web.HTML.Window as Html.Window
 
 foreign import innerText :: Html.Element.HTMLElement -> Effect String
-foreign import renderDateTime :: Date.JSDate -> Effect String
 
 type Entry t a =
     { start   :: t
@@ -89,13 +94,15 @@ scheduleInsert entry schedule
             if l < r then Parallel x' y else Parallel x y'
 
 scheduleRender
-    :: Dom.Document.Document -> String -> Schedule Date.JSDate Info
+    :: Dom.Document.Document
+    -> DateTime.Date
+    -> Schedule DateTime.Time Info
     -> Effect Dom.Element.Element
-scheduleRender doc day schedule0 = do
+scheduleRender doc date schedule0 = do
     container <- Dom.Document.createElement "div" doc
     let start = ticks $ scheduleStart schedule0
         end = ticks $ scheduleEnd schedule0
-        height = end - start + Int.toNumber margin
+        height = Int.toNumber $ end - start + margin
     Dom.Element.setAttribute "class" "day" container
     Dom.Element.setAttribute "style"
         ("position: relative; height: " <> show height <> "px;")
@@ -103,7 +110,7 @@ scheduleRender doc day schedule0 = do
 
     div <- Dom.Document.createElement "div" doc
     Dom.Element.setAttribute "class" "date" div
-    Dom.Node.setTextContent day (Dom.Element.toNode div)
+    Dom.Node.setTextContent (renderDate date) (Dom.Element.toNode div)
     Dom.Node.appendChild (Dom.Element.toNode div) (Dom.Element.toNode container)
 
     go container 0.0 100.0 schedule0
@@ -112,10 +119,29 @@ scheduleRender doc day schedule0 = do
     margin = 30
     zero   = scheduleStart schedule0
 
+    timeFmt =
+        [ Formatter.DateTime.Hours24
+        , Formatter.DateTime.Placeholder ":"
+        , Formatter.DateTime.MinutesTwoDigits
+        ]
+    dateFmt  =
+        [ Formatter.DateTime.DayOfWeekName
+        , Formatter.DateTime.Placeholder " "
+        , Formatter.DateTime.DayOfMonth
+        , Formatter.DateTime.Placeholder " "
+        , Formatter.DateTime.MonthFull
+        ]
+
+    renderTime t =
+        Formatter.DateTime.format (List.fromFoldable timeFmt) $
+        DateTime.DateTime date t
+    renderDate d = Formatter.DateTime.format (List.fromFoldable dateFmt) $
+        DateTime.DateTime d (Time.Time bottom bottom bottom bottom)
+
     go container left width schedule = case schedule of
         Single {start, end, content: {kind, link, title}} -> do
-            let y = ticks start - ticks zero + Int.toNumber margin
-                height = ticks end - ticks start
+            let y = Int.toNumber $ ticks start - ticks zero + margin
+                height = Int.toNumber $ ticks end - ticks start
             div <- case String.trim link of
                 "" -> Dom.Document.createElement "div" doc
                 link' -> do
@@ -134,8 +160,8 @@ scheduleRender doc day schedule0 = do
 
             timeSpan <- Dom.Document.createElement "span" doc
             Dom.Element.setAttribute "class" "time" timeSpan
-            startStr <- renderDateTime start
-            endStr <- renderDateTime end
+            let startStr = renderTime start
+                endStr = renderTime end
             Dom.Node.setTextContent (startStr <> " - " <> endStr <> ":")
                 (Dom.Element.toNode timeSpan)
             Dom.Node.appendChild
@@ -159,28 +185,30 @@ scheduleRender doc day schedule0 = do
             go container left (xp * unitWidth) x
             go container (left + xp * unitWidth) (yp * unitWidth) y
 
-    ticks date = Date.getTime date / 1000.0 / 60.0
+    ticks t = fromEnum (Time.hour t) * 60 + fromEnum (Time.minute t)
 
+type Calendar a = Map.Map DateTime.Date (Schedule DateTime.Time a)
 
-type Day = String
-
-type Calendar a = HM.HashMap Day (Schedule Date.JSDate a)
-
-calendarInsert :: forall a. Entry Date.JSDate a -> Calendar a -> Calendar a
-calendarInsert entry calendar = case HM.lookup day calendar of
-    Nothing -> HM.insert day (Single entry) calendar
-    Just events -> HM.insert day (scheduleInsert entry events) calendar
+calendarInsert :: forall a. Entry DateTime.DateTime a -> Calendar a -> Calendar a
+calendarInsert entry calendar = case Map.lookup date calendar of
+    Nothing -> Map.insert date (Single time) calendar
+    Just events -> Map.insert date (scheduleInsert time events) calendar
   where
-    day = Date.toDateString entry.start
+    date = DateTime.date entry.start
+    time =
+        { start:   DateTime.time entry.start
+        , end:     DateTime.time entry.end
+        , content: entry.content
+        }
 
-calendarFromEntries :: forall a. Array (Entry Date.JSDate a) -> Calendar a
-calendarFromEntries = Array.foldl (flip calendarInsert) HM.empty
+calendarFromEntries :: forall a. Array (Entry DateTime.DateTime a) -> Calendar a
+calendarFromEntries = Array.foldl (flip calendarInsert) Map.empty
 
 calendarRender
     :: Dom.Document.Document -> Calendar Info
     -> Effect (Array Dom.Element.Element)
 calendarRender doc calendar = traverse (uncurry $ scheduleRender doc) $
-    Array.sortWith (snd >>> scheduleStart) $ HM.toArrayBy Tuple calendar
+    Array.sortWith fst $ Map.toUnfoldable calendar
 
 type Info =
     { kind  :: String
@@ -189,7 +217,8 @@ type Info =
     }
 
 parseEntry
-    :: Dom.Element.Element -> Effect (Maybe (Entry Date.JSDate Info))
+    :: Dom.Element.Element
+    -> Effect (Maybe (Entry DateTime.DateTime Info))
 parseEntry element = do
     cells <- querySelectorAll
             (QuerySelector "td") (Dom.Element.toParentNode element) >>=
@@ -198,13 +227,18 @@ parseEntry element = do
         traverse innerText
     case cells of
         [startText, endText, kind, link, title] -> do
-            start <- Date.parse startText
-            end <- Date.parse endText
+            DateTime.Parsing.FullDateTime start _ <-
+                either (show >>> throw) pure $
+                DateTime.Parsing.fromString startText
+            DateTime.Parsing.FullDateTime end _ <-
+                either (show >>> throw) pure $
+                DateTime.Parsing.fromString endText
             pure $ Just {start, end, content: {kind, link, title}}
         _ -> pure Nothing
 
 parseEntries
-    :: Dom.Element.Element -> Effect (Array (Entry Date.JSDate Info))
+    :: Dom.Element.Element
+    -> Effect (Array (Entry DateTime.DateTime Info))
 parseEntries schedule = do
     trs <- querySelectorAll (QuerySelector "tr")
             (Dom.Element.toParentNode schedule) >>=

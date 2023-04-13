@@ -1,11 +1,12 @@
 { name = "zurihcal"
 , dependencies =
   [ "arrays"
+  , "datetime-parsing"
   , "effect"
   , "exceptions"
   , "foldable-traversable"
+  , "formatters"
   , "integers"
-  , "js-date"
   , "maybe"
   , "prelude"
   , "psci-support"
