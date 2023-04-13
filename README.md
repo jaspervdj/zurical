@@ -20,7 +20,7 @@ Copy `index.js` wherever.
 ## Example
 
 A table in the `.schedule` class gets turned into a nicer looking schedule.
-Look at <index.html> for the expected markup.
+Look at [index.html](index.html) for the expected markup.
 
 
 ## Demo
