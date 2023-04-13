@@ -31,40 +31,40 @@ import Web.HTML.Window as Html.Window
 foreign import innerText :: Html.Element.HTMLElement -> Effect String
 foreign import renderDateTime :: Date.JSDate -> Effect String
 
-type Entry a =
-    { start   :: Date.JSDate
-    , end     :: Date.JSDate
+type Entry t a =
+    { start   :: t
+    , end     :: t
     , content :: a
     }
 
-data Schedule a
-    = Single (Entry a)
-    | After (Schedule a) (Schedule a)
-    | Parallel (Schedule a) (Schedule a)
+data Schedule t a
+    = Single (Entry t a)
+    | After (Schedule t a) (Schedule t a)
+    | Parallel (Schedule t a) (Schedule t a)
 
-derive instance genericSchedule :: Generic (Schedule a) _
+derive instance genericSchedule :: Generic (Schedule t a) _
 
-instance showSchedule :: Show a => Show (Schedule a) where
+instance showSchedule :: (Show t, Show a) => Show (Schedule t a) where
     show x = genericShow x
 
-scheduleStart :: forall a. Schedule a -> Date.JSDate
+scheduleStart :: forall t a. Ord t => Schedule t a -> t
 scheduleStart (Single entry) = entry.start
 scheduleStart (After x _) = scheduleStart x
 scheduleStart (Parallel x y) = min (scheduleStart x) (scheduleStart y)
 
-scheduleEnd :: forall a. Schedule a -> Date.JSDate
+scheduleEnd :: forall t a. Ord t => Schedule t a -> t
 scheduleEnd (Single entry) = entry.end
 scheduleEnd (After _ y) = scheduleEnd y
 scheduleEnd (Parallel x y) = max (scheduleEnd x) (scheduleEnd y)
 
-scheduleParallelism :: forall a. Schedule a -> Int
+scheduleParallelism :: forall t a. Schedule t a -> Int
 scheduleParallelism (Single _) = 1
 scheduleParallelism (After x y) =
     max (scheduleParallelism x) (scheduleParallelism y)
 scheduleParallelism (Parallel x y) =
     scheduleParallelism x + scheduleParallelism y
 
-scheduleInsert :: forall a. Entry a -> Schedule a -> Schedule a
+scheduleInsert :: forall t a. Ord t => Entry t a -> Schedule t a -> Schedule t a
 scheduleInsert entry schedule
     | entry.start >= scheduleEnd schedule =
         After schedule (Single entry)
@@ -89,7 +89,7 @@ scheduleInsert entry schedule
             if l < r then Parallel x' y else Parallel x y'
 
 scheduleRender
-    :: Dom.Document.Document -> String -> Schedule Info
+    :: Dom.Document.Document -> String -> Schedule Date.JSDate Info
     -> Effect Dom.Element.Element
 scheduleRender doc day schedule0 = do
     container <- Dom.Document.createElement "div" doc
@@ -164,16 +164,16 @@ scheduleRender doc day schedule0 = do
 
 type Day = String
 
-type Calendar a = HM.HashMap Day (Schedule a)
+type Calendar a = HM.HashMap Day (Schedule Date.JSDate a)
 
-calendarInsert :: forall a. Entry a -> Calendar a -> Calendar a
+calendarInsert :: forall a. Entry Date.JSDate a -> Calendar a -> Calendar a
 calendarInsert entry calendar = case HM.lookup day calendar of
     Nothing -> HM.insert day (Single entry) calendar
     Just events -> HM.insert day (scheduleInsert entry events) calendar
   where
     day = Date.toDateString entry.start
 
-calendarFromEntries :: forall a. Array (Entry a) -> Calendar a
+calendarFromEntries :: forall a. Array (Entry Date.JSDate a) -> Calendar a
 calendarFromEntries = Array.foldl (flip calendarInsert) HM.empty
 
 calendarRender
@@ -189,7 +189,7 @@ type Info =
     }
 
 parseEntry
-    :: Dom.Element.Element -> Effect (Maybe (Entry Info))
+    :: Dom.Element.Element -> Effect (Maybe (Entry Date.JSDate Info))
 parseEntry element = do
     cells <- querySelectorAll
             (QuerySelector "td") (Dom.Element.toParentNode element) >>=
@@ -204,7 +204,7 @@ parseEntry element = do
         _ -> pure Nothing
 
 parseEntries
-    :: Dom.Element.Element -> Effect (Array (Entry Info))
+    :: Dom.Element.Element -> Effect (Array (Entry Date.JSDate Info))
 parseEntries schedule = do
     trs <- querySelectorAll (QuerySelector "tr")
             (Dom.Element.toParentNode schedule) >>=
