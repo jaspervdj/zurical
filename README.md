@@ -5,6 +5,8 @@
 ## Goals
 
 * Smart about timezones, could work for remote events as well as in-person.
+* Easy to completely style with lightweight CSS.
+* Figures out parallel running events automatically and respects their order.
 * Optional: source of truth is readable and correct with NoScript.
 
 ## Building
