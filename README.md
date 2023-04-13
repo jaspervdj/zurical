@@ -25,4 +25,4 @@ Look at [index.html](index.html) for the expected markup.
 
 ## Demo
 
-<https://zfoh.ch/zurihac2021/#schedule>
+<https://zfoh.ch/zurihac2023/#schedule>
