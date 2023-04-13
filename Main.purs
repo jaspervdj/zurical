@@ -241,15 +241,15 @@ parseEntry element = do
         (Array.mapMaybe Html.Element.fromNode >>> pure) >>=
         traverse innerText
     case cells of
-        [startText, endText, kind, link, title] -> do
-            DateTime.Parsing.FullDateTime start _ <-
-                either (show >>> throw) pure $
-                DateTime.Parsing.fromString startText
-            DateTime.Parsing.FullDateTime end _ <-
-                either (show >>> throw) pure $
-                DateTime.Parsing.fromString endText
+        [startText, endText, title, link, kind] -> do
+            start <- parseDateTime startText
+            end   <- parseDateTime endText
             pure $ Just {start, end, content: {kind, link, title}}
         _ -> pure Nothing
+  where
+    parseDateTime txt = either (show >>> throw) pure $ do
+        DateTime.Parsing.FullDateTime t _ <- DateTime.Parsing.fromString txt
+        pure t
 
 parseEntries
     :: Dom.Element.Element
